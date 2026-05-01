@@ -188,12 +188,19 @@ def build_messages(
     min_pixels: int | None,
     max_pixels: int | None,
 ) -> list[dict[str, Any]]:
-    prompt = (
-        "Answer the question using only the document image. "
-        "Return the shortest exact answer text, without explanation.\n"
-        f"Question: {question}"
-        f"{thinking_instruction(thinking_mode)}"
-    )
+    if thinking_mode == "on":
+        prompt = (
+            "Use thinking mode to reason from the document image, then provide the shortest exact answer text.\n"
+            f"Question: {question}"
+            f"{thinking_instruction(thinking_mode)}"
+        )
+    else:
+        prompt = (
+            "Answer the question using only the document image. "
+            "Return the shortest exact answer text, without explanation.\n"
+            f"Question: {question}"
+            f"{thinking_instruction(thinking_mode)}"
+        )
     image_content: dict[str, Any] = {"type": "image", "image": image}
     if min_pixels is not None:
         image_content["min_pixels"] = min_pixels

@@ -73,6 +73,8 @@ The script stores the raw `prediction` and a `scored_prediction` with `<think>..
 
 For thinking-mode runs, `metrics.json` also reports `thinking_tag_count`, `thinking_tag_rate`, and `missing_think_tag_count`, so you can see how often the model failed to include a complete `<think>...</think>` block.
 
+For the vLLM OpenAI-compatible evaluator, `--thinking-mode on` sends `chat_template_kwargs.enable_thinking=true` in `extra_body`. This is required for Qwen thinking mode; appending `/think` alone may not produce `<think>...</think>` traces.
+
 ## Acceleration Strategy
 
 Use this order when scaling from quick checks to full validation:

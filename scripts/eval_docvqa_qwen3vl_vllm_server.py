@@ -76,6 +76,12 @@ def image_to_data_url(image: Any, max_pixels: int | None, jpeg_quality: int) -> 
 
 
 def build_prompt(question: str, thinking_mode: str) -> str:
+    if thinking_mode == "on":
+        return (
+            "Use thinking mode to reason from the document image, then provide the shortest exact answer text.\n"
+            f"Question: {question}"
+            f"{thinking_instruction(thinking_mode)}"
+        )
     return (
         "Answer the question using only the document image. "
         "Return the shortest exact answer text, without explanation.\n"
@@ -100,6 +106,8 @@ def build_messages(row: dict[str, Any], args: argparse.Namespace) -> list[dict[s
 
 def extra_body_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
     extra_body: dict[str, Any] = {}
+    if args.thinking_mode != "default":
+        extra_body["chat_template_kwargs"] = {"enable_thinking": args.thinking_mode == "on"}
     if args.top_k is not None:
         extra_body["top_k"] = args.top_k
     if args.min_p is not None:
