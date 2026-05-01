@@ -71,6 +71,8 @@ python scripts/eval_docvqa_qwen3vl.py \
 
 The script stores the raw `prediction` and a `scored_prediction` with `<think>...</think>` blocks removed before exact match and ANLS scoring.
 
+For thinking-mode runs, `metrics.json` also reports `thinking_tag_count` and `thinking_tag_rate`. If `--thinking-mode on` produces no `<think>` or `<thinking>` tags, the evaluator prints a warning and stores it in `thinking_tag_warning`.
+
 ## Acceleration Strategy
 
 Use this order when scaling from quick checks to full validation:

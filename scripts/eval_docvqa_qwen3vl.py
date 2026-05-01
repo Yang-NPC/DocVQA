@@ -173,8 +173,12 @@ def thinking_instruction(thinking_mode: str) -> str:
 
 
 def strip_thinking(text: str) -> str:
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<think(?:ing)?>.*?</think(?:ing)?>", "", text, flags=re.DOTALL | re.IGNORECASE)
     return text.strip()
+
+
+def has_thinking_tag(text: str) -> bool:
+    return re.search(r"</?think(?:ing)?>", text, flags=re.IGNORECASE) is not None
 
 
 def build_messages(
@@ -347,6 +351,7 @@ def main() -> None:
     predictions_path = output_dir / "predictions.jsonl"
     total_exact = 0
     total_anls = 0.0
+    thinking_tag_count = 0
     count = 0
 
     with predictions_path.open("w", encoding="utf-8") as handle:
@@ -360,6 +365,7 @@ def main() -> None:
             predictions = generate_answers(model=model, processor=processor, rows=batch, args=args)
             for batch_row, prediction in zip(batch, predictions):
                 record, em, anls = build_record(batch_row, prediction, args)
+                thinking_tag_count += int(has_thinking_tag(prediction))
                 total_exact += int(em)
                 total_anls += anls
                 count += 1
@@ -371,6 +377,7 @@ def main() -> None:
             predictions = generate_answers(model=model, processor=processor, rows=batch, args=args)
             for batch_row, prediction in zip(batch, predictions):
                 record, em, anls = build_record(batch_row, prediction, args)
+                thinking_tag_count += int(has_thinking_tag(prediction))
                 total_exact += int(em)
                 total_anls += anls
                 count += 1
@@ -390,9 +397,18 @@ def main() -> None:
         "min_pixels": args.min_pixels,
         "max_pixels": args.max_pixels,
         "num_examples": count,
+        "thinking_tag_count": thinking_tag_count,
+        "thinking_tag_rate": thinking_tag_count / count if count else 0.0,
+        "thinking_tag_warning": (
+            "thinking_mode=on but no <think> or <thinking> tags were found in predictions"
+            if args.thinking_mode == "on" and count and thinking_tag_count == 0
+            else None
+        ),
         "exact_match": total_exact / count if count else 0.0,
         "anls": total_anls / count if count else 0.0,
     }
+    if metrics["thinking_tag_warning"]:
+        print(f"WARNING: {metrics['thinking_tag_warning']}")
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
 
