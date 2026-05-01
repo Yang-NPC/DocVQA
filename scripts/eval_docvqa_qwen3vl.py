@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-column", default="image")
     parser.add_argument("--answers-column", default="answers")
     parser.add_argument("--question-id-column", default="questionId")
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--thinking-mode", choices=["default", "on", "off"], default="default")
     parser.add_argument("--temperature", type=float, default=0.0)
@@ -37,6 +38,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--torch-dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
     parser.add_argument("--device-map", default="auto")
     parser.add_argument("--attn-implementation", default=None)
+    parser.add_argument("--min-pixels", type=int, default=None)
+    parser.add_argument("--max-pixels", type=int, default=None)
     parser.add_argument("--trust-remote-code", action="store_true")
     return parser.parse_args()
 
@@ -174,50 +177,97 @@ def strip_thinking(text: str) -> str:
     return text.strip()
 
 
-def build_messages(image: Any, question: str, thinking_mode: str) -> list[dict[str, Any]]:
+def build_messages(
+    image: Any,
+    question: str,
+    thinking_mode: str,
+    min_pixels: int | None,
+    max_pixels: int | None,
+) -> list[dict[str, Any]]:
     prompt = (
         "Answer the question using only the document image. "
         "Return the shortest exact answer text, without explanation.\n"
         f"Question: {question}"
         f"{thinking_instruction(thinking_mode)}"
     )
+    image_content: dict[str, Any] = {"type": "image", "image": image}
+    if min_pixels is not None:
+        image_content["min_pixels"] = min_pixels
+    if max_pixels is not None:
+        image_content["max_pixels"] = max_pixels
+
     return [
         {
             "role": "user",
             "content": [
-                {"type": "image", "image": image},
+                image_content,
                 {"type": "text", "text": prompt},
             ],
         }
     ]
 
 
-def generate_answer(
-    model: Any,
-    processor: Any,
-    image: Any,
-    question: str,
-    max_new_tokens: int,
-    thinking_mode: str,
-    temperature: float,
-    top_p: float,
-    top_k: int | None,
-    min_p: float | None,
-) -> str:
-    import torch
-
-    messages = build_messages(image, question, thinking_mode)
+def apply_chat_template(processor: Any, messages: list[dict[str, Any]], thinking_mode: str) -> str:
     chat_template_kwargs = {"tokenize": False, "add_generation_prompt": True}
     if thinking_mode != "default":
         chat_template_kwargs["enable_thinking"] = thinking_mode == "on"
     try:
-        text = processor.apply_chat_template(messages, **chat_template_kwargs)
+        return processor.apply_chat_template(messages, **chat_template_kwargs)
     except TypeError:
         chat_template_kwargs.pop("enable_thinking", None)
-        text = processor.apply_chat_template(messages, **chat_template_kwargs)
-    image_inputs, video_inputs = process_vision_info(messages)
+        return processor.apply_chat_template(messages, **chat_template_kwargs)
+
+
+def generation_kwargs_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    generation_kwargs: dict[str, Any] = {"max_new_tokens": args.max_new_tokens}
+    if args.temperature > 0.0:
+        generation_kwargs.update({"do_sample": True, "temperature": args.temperature, "top_p": args.top_p})
+    else:
+        generation_kwargs["do_sample"] = False
+    if args.top_k is not None:
+        generation_kwargs["top_k"] = args.top_k
+    if args.min_p is not None:
+        generation_kwargs["min_p"] = args.min_p
+    return generation_kwargs
+
+
+def process_batch_vision_info(batch_messages: list[list[dict[str, Any]]]) -> tuple[Any, Any]:
+    try:
+        return process_vision_info(batch_messages)
+    except Exception:
+        image_inputs = []
+        video_inputs = []
+        for messages in batch_messages:
+            row_images, row_videos = process_vision_info(messages)
+            if row_images:
+                image_inputs.extend(row_images)
+            if row_videos:
+                video_inputs.extend(row_videos)
+        return image_inputs or None, video_inputs or None
+
+
+def generate_answers(
+    model: Any,
+    processor: Any,
+    rows: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> list[str]:
+    import torch
+
+    batch_messages = [
+        build_messages(
+            image=row[args.image_column],
+            question=str(row[args.question_column]),
+            thinking_mode=args.thinking_mode,
+            min_pixels=args.min_pixels,
+            max_pixels=args.max_pixels,
+        )
+        for row in rows
+    ]
+    texts = [apply_chat_template(processor, messages, args.thinking_mode) for messages in batch_messages]
+    image_inputs, video_inputs = process_batch_vision_info(batch_messages)
     inputs = processor(
-        text=[text],
+        text=texts,
         images=image_inputs,
         videos=video_inputs,
         padding=True,
@@ -225,21 +275,31 @@ def generate_answer(
     )
     inputs = inputs.to(select_input_device(model))
 
-    generation_kwargs: dict[str, Any] = {"max_new_tokens": max_new_tokens}
-    if temperature > 0.0:
-        generation_kwargs.update({"do_sample": True, "temperature": temperature, "top_p": top_p})
-    else:
-        generation_kwargs["do_sample"] = False
-    if top_k is not None:
-        generation_kwargs["top_k"] = top_k
-    if min_p is not None:
-        generation_kwargs["min_p"] = min_p
-
     with torch.inference_mode():
-        generated_ids = model.generate(**inputs, **generation_kwargs)
+        generated_ids = model.generate(**inputs, **generation_kwargs_from_args(args))
     generated_ids = generated_ids[:, inputs.input_ids.shape[1] :]
     decoded = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-    return decoded[0].strip()
+    return [prediction.strip() for prediction in decoded]
+
+
+def build_record(row: dict[str, Any], prediction: str, args: argparse.Namespace) -> tuple[dict[str, Any], bool, float]:
+    question = str(row[args.question_column])
+    answers = coerce_answers(row.get(args.answers_column))
+    scored_prediction = strip_thinking(prediction)
+    em = exact_match(scored_prediction, answers)
+    anls = anls_score(scored_prediction, answers)
+
+    record = {
+        "question_id": row.get(args.question_id_column),
+        "question": question,
+        "prediction": prediction,
+        "scored_prediction": scored_prediction,
+        "answers": answers,
+        "hardness_score": hardness_score(row, args.question_column, args.answers_column),
+        "exact_match": em,
+        "anls": anls,
+    }
+    return record, em, anls
 
 
 def select_input_device(model: Any) -> str:
@@ -255,6 +315,8 @@ def select_input_device(model: Any) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.batch_size < 1:
+        raise ValueError("--batch-size must be at least 1")
 
     import torch
     from datasets import load_dataset
@@ -288,41 +350,33 @@ def main() -> None:
     count = 0
 
     with predictions_path.open("w", encoding="utf-8") as handle:
-        for row in tqdm(dataset, desc="Evaluating"):
-            question = str(row[args.question_column])
-            image = row[args.image_column]
-            answers = coerce_answers(row.get(args.answers_column))
-            prediction = generate_answer(
-                model=model,
-                processor=processor,
-                image=image,
-                question=question,
-                max_new_tokens=args.max_new_tokens,
-                thinking_mode=args.thinking_mode,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
-                min_p=args.min_p,
-            )
-            scored_prediction = strip_thinking(prediction)
+        batch: list[dict[str, Any]] = []
+        progress = tqdm(total=len(dataset), desc="Evaluating")
+        for row in dataset:
+            batch.append(row)
+            if len(batch) < args.batch_size:
+                continue
 
-            em = exact_match(scored_prediction, answers)
-            anls = anls_score(scored_prediction, answers)
-            total_exact += int(em)
-            total_anls += anls
-            count += 1
+            predictions = generate_answers(model=model, processor=processor, rows=batch, args=args)
+            for batch_row, prediction in zip(batch, predictions):
+                record, em, anls = build_record(batch_row, prediction, args)
+                total_exact += int(em)
+                total_anls += anls
+                count += 1
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            progress.update(len(batch))
+            batch = []
 
-            record = {
-                "question_id": row.get(args.question_id_column),
-                "question": question,
-                "prediction": prediction,
-                "scored_prediction": scored_prediction,
-                "answers": answers,
-                "hardness_score": hardness_score(row, args.question_column, args.answers_column),
-                "exact_match": em,
-                "anls": anls,
-            }
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if batch:
+            predictions = generate_answers(model=model, processor=processor, rows=batch, args=args)
+            for batch_row, prediction in zip(batch, predictions):
+                record, em, anls = build_record(batch_row, prediction, args)
+                total_exact += int(em)
+                total_anls += anls
+                count += 1
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            progress.update(len(batch))
+        progress.close()
 
     metrics = {
         "model_id": args.model_id,
@@ -332,6 +386,9 @@ def main() -> None:
         "selection": args.selection,
         "seed": args.seed,
         "thinking_mode": args.thinking_mode,
+        "batch_size": args.batch_size,
+        "min_pixels": args.min_pixels,
+        "max_pixels": args.max_pixels,
         "num_examples": count,
         "exact_match": total_exact / count if count else 0.0,
         "anls": total_anls / count if count else 0.0,

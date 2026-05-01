@@ -42,6 +42,7 @@ python scripts/eval_docvqa_qwen3vl.py \
   --split validation \
   --selection hard \
   --limit 100 \
+  --batch-size 8 \
   --output-dir outputs/baseline_qwen3vl8b_docvqa_hard100
 ```
 
@@ -61,6 +62,7 @@ python scripts/eval_docvqa_qwen3vl.py \
   --limit 20 \
   --thinking-mode on \
   --max-new-tokens 256 \
+  --batch-size 4 \
   --temperature 0.6 \
   --top-p 0.95 \
   --top-k 20 \
@@ -68,6 +70,34 @@ python scripts/eval_docvqa_qwen3vl.py \
 ```
 
 The script stores the raw `prediction` and a `scored_prediction` with `<think>...</think>` blocks removed before exact match and ANLS scoring.
+
+## Faster A100 Baseline
+
+On an 80G A100, start with batching:
+
+```bash
+python scripts/eval_docvqa_qwen3vl.py \
+  --model-id Qwen/Qwen3-VL-8B-Instruct \
+  --dataset-name lmms-lab/DocVQA \
+  --dataset-config DocVQA \
+  --split validation \
+  --batch-size 16 \
+  --torch-dtype bfloat16 \
+  --attn-implementation flash_attention_2 \
+  --output-dir outputs/baseline_qwen3vl8b_docvqa_val_bs16
+```
+
+If evaluation is still image-preprocessing bound, add a pixel cap. This is faster but may change accuracy:
+
+```bash
+--max-pixels 1003520
+```
+
+For thinking mode, use a smaller batch size because it generates many more tokens:
+
+```bash
+--thinking-mode on --max-new-tokens 256 --batch-size 4
+```
 
 ## Full Baseline
 
@@ -77,6 +107,7 @@ python scripts/eval_docvqa_qwen3vl.py \
   --dataset-name lmms-lab/DocVQA \
   --dataset-config DocVQA \
   --split validation \
+  --batch-size 16 \
   --output-dir outputs/baseline_qwen3vl8b_docvqa_val
 ```
 
