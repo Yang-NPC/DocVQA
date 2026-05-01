@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--question-id-column", default="questionId")
     parser.add_argument("--max-tokens", type=int, default=32)
     parser.add_argument("--thinking-mode", choices=["default", "on", "off"], default="off")
+    parser.add_argument("--require-think-tags", action="store_true")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=None)
@@ -213,8 +214,18 @@ def main() -> None:
         "thinking_tag_count": thinking_tag_count,
         "thinking_tag_rate": thinking_tag_count / count if count else 0.0,
         "thinking_tag_warning": (
-            "thinking_mode=on but no <think> or <thinking> tags were found in predictions"
+            "thinking_mode=on but no complete <think>...</think> tags were found in predictions"
             if args.thinking_mode == "on" and count and thinking_tag_count == 0
+            else (
+                "thinking_mode=on but some predictions are missing complete <think>...</think> tags"
+                if args.thinking_mode == "on" and count and thinking_tag_count < count
+                else None
+            )
+        ),
+        "require_think_tags": args.require_think_tags,
+        "missing_think_tag_count": (
+            count - thinking_tag_count
+            if args.thinking_mode == "on"
             else None
         ),
         "exact_match": total_exact / count if count else 0.0,
@@ -222,6 +233,8 @@ def main() -> None:
     }
     if metrics["thinking_tag_warning"]:
         print(f"WARNING: {metrics['thinking_tag_warning']}")
+    if args.require_think_tags and args.thinking_mode == "on" and thinking_tag_count < count:
+        raise RuntimeError(metrics["thinking_tag_warning"])
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
 

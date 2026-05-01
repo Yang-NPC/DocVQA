@@ -61,6 +61,7 @@ python scripts/eval_docvqa_qwen3vl.py \
   --selection hard \
   --limit 20 \
   --thinking-mode on \
+  --require-think-tags \
   --max-new-tokens 256 \
   --batch-size 4 \
   --temperature 0.6 \
@@ -71,7 +72,7 @@ python scripts/eval_docvqa_qwen3vl.py \
 
 The script stores the raw `prediction` and a `scored_prediction` with `<think>...</think>` blocks removed before exact match and ANLS scoring.
 
-For thinking-mode runs, `metrics.json` also reports `thinking_tag_count` and `thinking_tag_rate`. If `--thinking-mode on` produces no `<think>` or `<thinking>` tags, the evaluator prints a warning and stores it in `thinking_tag_warning`.
+For thinking-mode runs, `metrics.json` also reports `thinking_tag_count`, `thinking_tag_rate`, and `missing_think_tag_count`. Add `--require-think-tags` when you want the run to fail if any prediction is missing a complete `<think>...</think>` block.
 
 ## Acceleration Strategy
 
@@ -133,7 +134,7 @@ If stable, increase `--concurrency`, `--max-num-seqs`, and `--max-num-batched-to
 --thinking-mode on --max-new-tokens 256
 ```
 
-Thinking mode is slower because it generates more tokens. Use smaller batches or lower vLLM concurrency, for example `--batch-size 4` in Transformers or `--concurrency 2` in vLLM.
+Thinking mode is slower because it generates more tokens. Use smaller batches or lower vLLM concurrency, for example `--batch-size 4` in Transformers or `--concurrency 2` in vLLM. Use `--require-think-tags` if every answer must include a complete `<think>...</think>` trace.
 
 ## Faster A100 Baseline
 

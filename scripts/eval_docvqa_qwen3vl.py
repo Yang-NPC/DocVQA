@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--thinking-mode", choices=["default", "on", "off"], default="default")
+    parser.add_argument("--require-think-tags", action="store_true")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=None)
@@ -173,12 +174,12 @@ def thinking_instruction(thinking_mode: str) -> str:
 
 
 def strip_thinking(text: str) -> str:
-    text = re.sub(r"<think(?:ing)?>.*?</think(?:ing)?>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     return text.strip()
 
 
 def has_thinking_tag(text: str) -> bool:
-    return re.search(r"</?think(?:ing)?>", text, flags=re.IGNORECASE) is not None
+    return re.search(r"<think>.*?</think>", text, flags=re.DOTALL | re.IGNORECASE) is not None
 
 
 def build_messages(
@@ -400,8 +401,18 @@ def main() -> None:
         "thinking_tag_count": thinking_tag_count,
         "thinking_tag_rate": thinking_tag_count / count if count else 0.0,
         "thinking_tag_warning": (
-            "thinking_mode=on but no <think> or <thinking> tags were found in predictions"
+            "thinking_mode=on but no complete <think>...</think> tags were found in predictions"
             if args.thinking_mode == "on" and count and thinking_tag_count == 0
+            else (
+                "thinking_mode=on but some predictions are missing complete <think>...</think> tags"
+                if args.thinking_mode == "on" and count and thinking_tag_count < count
+                else None
+            )
+        ),
+        "require_think_tags": args.require_think_tags,
+        "missing_think_tag_count": (
+            count - thinking_tag_count
+            if args.thinking_mode == "on"
             else None
         ),
         "exact_match": total_exact / count if count else 0.0,
@@ -409,6 +420,8 @@ def main() -> None:
     }
     if metrics["thinking_tag_warning"]:
         print(f"WARNING: {metrics['thinking_tag_warning']}")
+    if args.require_think_tags and args.thinking_mode == "on" and thinking_tag_count < count:
+        raise RuntimeError(metrics["thinking_tag_warning"])
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
 
