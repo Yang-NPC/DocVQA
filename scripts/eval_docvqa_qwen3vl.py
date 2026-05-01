@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Baseline DocVQA evaluation for Qwen3-VL."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import torch
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Evaluate Qwen3-VL on DocVQA.")
+    parser.add_argument("--model-id", default="Qwen/Qwen3-VL-8B-Instruct")
+    parser.add_argument("--dataset-name", default="lmms-lab/DocVQA")
+    parser.add_argument("--dataset-config", default="DocVQA")
+    parser.add_argument("--split", default="validation")
+    parser.add_argument("--output-dir", default="outputs/baseline_qwen3vl8b_docvqa")
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--question-column", default="question")
+    parser.add_argument("--image-column", default="image")
+    parser.add_argument("--answers-column", default="answers")
+    parser.add_argument("--question-id-column", default="questionId")
+    parser.add_argument("--max-new-tokens", type=int, default=32)
+    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--torch-dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
+    parser.add_argument("--device-map", default="auto")
+    parser.add_argument("--attn-implementation", default=None)
+    parser.add_argument("--trust-remote-code", action="store_true")
+    return parser.parse_args()
+
+
+def dtype_from_name(name: str) -> str | "torch.dtype":
+    import torch
+
+    if name == "auto":
+        return "auto"
+    return {
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+        "float32": torch.float32,
+    }[name]
+
+
+def normalize_answer(text: Any) -> str:
+    text = "" if text is None else str(text)
+    text = text.lower()
+    text = re.sub(r"[\t\n\r]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def levenshtein_distance(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+
+    previous = list(range(len(b) + 1))
+    for i, char_a in enumerate(a, start=1):
+        current = [i]
+        for j, char_b in enumerate(b, start=1):
+            insertion = current[j - 1] + 1
+            deletion = previous[j] + 1
+            substitution = previous[j - 1] + (char_a != char_b)
+            current.append(min(insertion, deletion, substitution))
+        previous = current
+    return previous[-1]
+
+
+def anls_score(prediction: str, answers: list[str]) -> float:
+    pred = normalize_answer(prediction)
+    best = 0.0
+    for answer in answers:
+        gold = normalize_answer(answer)
+        max_len = max(len(pred), len(gold))
+        if max_len == 0:
+            score = 1.0
+        else:
+            score = 1.0 - (levenshtein_distance(pred, gold) / max_len)
+            score = score if score >= 0.5 else 0.0
+        best = max(best, score)
+    return best
+
+
+def exact_match(prediction: str, answers: list[str]) -> bool:
+    pred = normalize_answer(prediction)
+    return any(pred == normalize_answer(answer) for answer in answers)
+
+
+def coerce_answers(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, tuple):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def build_messages(image: Any, question: str) -> list[dict[str, Any]]:
+    prompt = (
+        "Answer the question using only the document image. "
+        "Return the shortest exact answer text, without explanation.\n"
+        f"Question: {question}"
+    )
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": image},
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
+
+
+def generate_answer(
+    model: Any,
+    processor: Any,
+    image: Any,
+    question: str,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+) -> str:
+    import torch
+
+    messages = build_messages(image, question)
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to(select_input_device(model))
+
+    generation_kwargs: dict[str, Any] = {"max_new_tokens": max_new_tokens}
+    if temperature > 0.0:
+        generation_kwargs.update({"do_sample": True, "temperature": temperature, "top_p": top_p})
+    else:
+        generation_kwargs["do_sample"] = False
+
+    with torch.inference_mode():
+        generated_ids = model.generate(**inputs, **generation_kwargs)
+    generated_ids = generated_ids[:, inputs.input_ids.shape[1] :]
+    decoded = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    return decoded[0].strip()
+
+
+def select_input_device(model: Any) -> str:
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    try:
+        return str(next(model.parameters()).device)
+    except StopIteration:
+        return "cpu"
+
+
+def main() -> None:
+    args = parse_args()
+
+    import torch
+    from datasets import load_dataset
+    from qwen_vl_utils import process_vision_info as imported_process_vision_info
+    from tqdm import tqdm
+    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+
+    globals()["process_vision_info"] = imported_process_vision_info
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    model_kwargs: dict[str, Any] = {
+        "dtype": dtype_from_name(args.torch_dtype),
+        "device_map": args.device_map,
+        "trust_remote_code": args.trust_remote_code,
+    }
+    if args.attn_implementation:
+        model_kwargs["attn_implementation"] = args.attn_implementation
+
+    processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=args.trust_remote_code)
+    model = Qwen3VLForConditionalGeneration.from_pretrained(args.model_id, **model_kwargs)
+    model.eval()
+
+    dataset = load_dataset(args.dataset_name, args.dataset_config, split=args.split)
+    if args.limit is not None:
+        dataset = dataset.select(range(min(args.limit, len(dataset))))
+
+    predictions_path = output_dir / "predictions.jsonl"
+    total_exact = 0
+    total_anls = 0.0
+    count = 0
+
+    with predictions_path.open("w", encoding="utf-8") as handle:
+        for row in tqdm(dataset, desc="Evaluating"):
+            question = str(row[args.question_column])
+            image = row[args.image_column]
+            answers = coerce_answers(row.get(args.answers_column))
+            prediction = generate_answer(
+                model=model,
+                processor=processor,
+                image=image,
+                question=question,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
+            )
+
+            em = exact_match(prediction, answers)
+            anls = anls_score(prediction, answers)
+            total_exact += int(em)
+            total_anls += anls
+            count += 1
+
+            record = {
+                "question_id": row.get(args.question_id_column),
+                "question": question,
+                "prediction": prediction,
+                "answers": answers,
+                "exact_match": em,
+                "anls": anls,
+            }
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    metrics = {
+        "model_id": args.model_id,
+        "dataset_name": args.dataset_name,
+        "dataset_config": args.dataset_config,
+        "split": args.split,
+        "num_examples": count,
+        "exact_match": total_exact / count if count else 0.0,
+        "anls": total_anls / count if count else 0.0,
+    }
+    (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    print(json.dumps(metrics, indent=2))
+
+
+if __name__ == "__main__":
+    main()
