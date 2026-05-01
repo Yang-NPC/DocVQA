@@ -291,6 +291,16 @@ configs/llamafactory/qwen3vl_8b_thinking_lora_grpo_docvqa.yaml
 
 Important: current upstream LLaMA-Factory examples show Qwen3-VL templates as `qwen3_vl` / `qwen3_vl_nothink`. For this thinking-style GRPO setup, the config uses `template: qwen3_vl` and `model_name_or_path: Qwen/Qwen3-VL-8B-Thinking`.
 
+The GRPO YAML requires a LLaMA-Factory branch or fork that actually exposes GRPO parser/trainer support. If the installed checkout is upstream-only and rejects keys like `rlhf_algo`, `num_generations`, or `kl_coef`, that is a LLaMA-Factory capability mismatch, not a reward-script error. Do not remove those keys unless you intentionally stop doing GRPO.
+
+Check the installed LLaMA-Factory checkout before launching training:
+
+```bash
+python scripts/check_llamafactory_grpo_support.py \
+  --llamafactory-dir /content/LLaMA-Factory \
+  --config /content/LLaMA-Factory/examples/train_lora/qwen3vl_8b_thinking_lora_grpo_docvqa.yaml
+```
+
 Local Colab notebook:
 
 ```bash
