@@ -30,6 +30,23 @@ python scripts/eval_docvqa_qwen3vl.py \
   --output-dir outputs/baseline_qwen3vl8b_docvqa_smoke
 ```
 
+## Hard-Example Baseline
+
+For a more useful early signal, run a limited validation subset biased toward likely harder examples:
+
+```bash
+python scripts/eval_docvqa_qwen3vl.py \
+  --model-id Qwen/Qwen3-VL-8B-Instruct \
+  --dataset-name lmms-lab/DocVQA \
+  --dataset-config DocVQA \
+  --split validation \
+  --selection hard \
+  --limit 100 \
+  --output-dir outputs/baseline_qwen3vl8b_docvqa_hard100
+```
+
+The hard subset is selected with a lightweight heuristic over the ground-truth metadata: longer questions, longer/multi-token answers, numeric/date-like answers, and examples where provided answers differ.
+
 ## Full Baseline
 
 ```bash
@@ -52,4 +69,3 @@ The evaluator writes:
 - Use `--torch-dtype bfloat16` on modern GPUs. Use `--torch-dtype float16` if BF16 is unavailable.
 - Add `--attn-implementation flash_attention_2` if the server has FlashAttention installed.
 - Use `--limit` for quick server sanity checks before running the full validation split.
-

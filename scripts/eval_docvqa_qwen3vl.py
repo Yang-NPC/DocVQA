@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="validation")
     parser.add_argument("--output-dir", default="outputs/baseline_qwen3vl8b_docvqa")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--selection", choices=["first", "random", "hard"], default="first")
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--question-column", default="question")
     parser.add_argument("--image-column", default="image")
     parser.add_argument("--answers-column", default="answers")
@@ -103,6 +106,52 @@ def coerce_answers(value: Any) -> list[str]:
     if isinstance(value, tuple):
         return [str(item) for item in value]
     return [str(value)]
+
+
+def answer_token_count(answer: str) -> int:
+    return len(re.findall(r"\w+", normalize_answer(answer)))
+
+
+def hardness_score(row: dict[str, Any], question_column: str, answers_column: str) -> float:
+    question = str(row.get(question_column, ""))
+    answers = coerce_answers(row.get(answers_column))
+    normalized_answers = [normalize_answer(answer) for answer in answers]
+    longest_answer = max((len(answer) for answer in normalized_answers), default=0)
+    max_answer_tokens = max((answer_token_count(answer) for answer in normalized_answers), default=0)
+    question_tokens = len(re.findall(r"\w+", normalize_answer(question)))
+    has_number = any(re.search(r"\d", answer) for answer in normalized_answers)
+    has_date_like = any(re.search(r"\b\d{1,4}[-/]\d{1,2}([-/]\d{1,4})?\b", answer) for answer in normalized_answers)
+    answer_disagreement = len(set(normalized_answers)) > 1
+
+    score = 0.0
+    score += min(question_tokens, 30) * 0.7
+    score += min(longest_answer, 60) * 0.5
+    score += min(max_answer_tokens, 10) * 3.0
+    score += 8.0 if has_number else 0.0
+    score += 6.0 if has_date_like else 0.0
+    score += 4.0 if answer_disagreement else 0.0
+    return score
+
+
+def select_dataset(dataset: Any, args: argparse.Namespace) -> Any:
+    if args.limit is None:
+        return dataset
+
+    limit = min(args.limit, len(dataset))
+    if args.selection == "first":
+        return dataset.select(range(limit))
+
+    indices = list(range(len(dataset)))
+    if args.selection == "random":
+        random.Random(args.seed).shuffle(indices)
+        return dataset.select(indices[:limit])
+
+    scored_indices = [
+        (hardness_score(dataset[index], args.question_column, args.answers_column), index)
+        for index in indices
+    ]
+    scored_indices.sort(reverse=True)
+    return dataset.select([index for _, index in scored_indices[:limit]])
 
 
 def build_messages(image: Any, question: str) -> list[dict[str, Any]]:
@@ -196,8 +245,7 @@ def main() -> None:
     model.eval()
 
     dataset = load_dataset(args.dataset_name, args.dataset_config, split=args.split)
-    if args.limit is not None:
-        dataset = dataset.select(range(min(args.limit, len(dataset))))
+    dataset = select_dataset(dataset, args)
 
     predictions_path = output_dir / "predictions.jsonl"
     total_exact = 0
@@ -230,6 +278,7 @@ def main() -> None:
                 "question": question,
                 "prediction": prediction,
                 "answers": answers,
+                "hardness_score": hardness_score(row, args.question_column, args.answers_column),
                 "exact_match": em,
                 "anls": anls,
             }
@@ -240,6 +289,8 @@ def main() -> None:
         "dataset_name": args.dataset_name,
         "dataset_config": args.dataset_config,
         "split": args.split,
+        "selection": args.selection,
+        "seed": args.seed,
         "num_examples": count,
         "exact_match": total_exact / count if count else 0.0,
         "anls": total_anls / count if count else 0.0,
