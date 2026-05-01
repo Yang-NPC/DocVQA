@@ -73,7 +73,7 @@ The script stores the raw `prediction` and a `scored_prediction` with `<think>..
 
 ## Faster A100 Baseline
 
-On an 80G A100, start with batching:
+On an 80G A100, start with batching in the Transformers evaluator:
 
 ```bash
 python scripts/eval_docvqa_qwen3vl.py \
@@ -98,6 +98,35 @@ For thinking mode, use a smaller batch size because it generates many more token
 ```bash
 --thinking-mode on --max-new-tokens 256 --batch-size 4
 ```
+
+## Fast vLLM Server Baseline
+
+For the fastest VLM baseline on an A100, serve Qwen3-VL with vLLM and run the OpenAI-compatible evaluator. This keeps the task visual, unlike an OCR plus text-only LLM pipeline.
+
+Start the server:
+
+```bash
+pip install -U vllm
+vllm serve Qwen/Qwen3-VL-8B-Instruct \
+  --dtype bfloat16 \
+  --max-model-len 8192
+```
+
+Then evaluate with high request concurrency:
+
+```bash
+python scripts/eval_docvqa_qwen3vl_vllm_server.py \
+  --model-id Qwen/Qwen3-VL-8B-Instruct \
+  --base-url http://localhost:8000/v1 \
+  --dataset-name lmms-lab/DocVQA \
+  --dataset-config DocVQA \
+  --split validation \
+  --concurrency 64 \
+  --max-pixels 1003520 \
+  --output-dir outputs/baseline_qwen3vl8b_docvqa_val_vllm
+```
+
+Try `--concurrency 32`, `64`, and `128`; the best value depends on image size and server settings.
 
 ## Full Baseline
 
