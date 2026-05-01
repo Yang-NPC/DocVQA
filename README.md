@@ -208,6 +208,8 @@ LOG_FILE=/tmp/vllm_qwen3vl_thinking.log \
 scripts/run_vllm_qwen3vl_thinking.sh
 ```
 
+The Thinking runner starts vLLM with `--reasoning-parser qwen3`, so the OpenAI response can expose reasoning separately. The evaluator wraps that field back into `<think>...</think>` before writing `predictions.jsonl` and counting think tags.
+
 Then evaluate with the same Thinking model id:
 
 ```bash
@@ -220,7 +222,7 @@ python scripts/eval_docvqa_qwen3vl_vllm_server.py \
   --selection hard \
   --limit 200 \
   --thinking-mode on \
-  --max-tokens 256 \
+  --max-tokens 1024 \
   --temperature 0.6 \
   --top-p 0.95 \
   --top-k 20 \

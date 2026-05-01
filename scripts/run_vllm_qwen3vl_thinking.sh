@@ -38,6 +38,7 @@ nohup python -m vllm.entrypoints.openai.api_server \
   --max-model-len "$MAX_MODEL_LEN" \
   --max-num-seqs "$MAX_NUM_SEQS" \
   --max-num-batched-tokens "$MAX_NUM_BATCHED_TOKENS" \
+  --reasoning-parser qwen3 \
   --host "$HOST" \
   --port "$PORT" \
   --trust-remote-code \
@@ -48,4 +49,3 @@ echo "Started vLLM thinking server PID: $(cat "$PID_FILE")"
 echo "Model: $MODEL_ID"
 echo "URL: http://$HOST:$PORT/v1"
 echo "Log: $LOG_FILE"
-

@@ -128,7 +128,16 @@ def request_prediction(client: Any, row: dict[str, Any], args: argparse.Namespac
         request_kwargs["extra_body"] = extra_body
 
     response = client.chat.completions.create(**request_kwargs)
-    return response.choices[0].message.content.strip()
+    message = response.choices[0].message
+    content = (getattr(message, "content", None) or "").strip()
+    reasoning = (
+        getattr(message, "reasoning", None)
+        or getattr(message, "reasoning_content", None)
+        or ""
+    ).strip()
+    if reasoning:
+        return f"<think>{reasoning}</think>\n{content}".strip()
+    return content
 
 
 def build_record(row: dict[str, Any], prediction: str, args: argparse.Namespace) -> tuple[dict[str, Any], bool, float]:
