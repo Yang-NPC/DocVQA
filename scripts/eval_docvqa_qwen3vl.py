@@ -146,8 +146,12 @@ def select_dataset(dataset: Any, args: argparse.Namespace) -> Any:
         random.Random(args.seed).shuffle(indices)
         return dataset.select(indices[:limit])
 
+    scoring_dataset = dataset
+    if args.image_column in scoring_dataset.column_names:
+        scoring_dataset = scoring_dataset.remove_columns(args.image_column)
+
     scored_indices = [
-        (hardness_score(dataset[index], args.question_column, args.answers_column), index)
+        (hardness_score(scoring_dataset[index], args.question_column, args.answers_column), index)
         for index in indices
     ]
     scored_indices.sort(reverse=True)
@@ -240,12 +244,12 @@ def main() -> None:
     if args.attn_implementation:
         model_kwargs["attn_implementation"] = args.attn_implementation
 
+    dataset = load_dataset(args.dataset_name, args.dataset_config, split=args.split)
+    dataset = select_dataset(dataset, args)
+
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=args.trust_remote_code)
     model = Qwen3VLForConditionalGeneration.from_pretrained(args.model_id, **model_kwargs)
     model.eval()
-
-    dataset = load_dataset(args.dataset_name, args.dataset_config, split=args.split)
-    dataset = select_dataset(dataset, args)
 
     predictions_path = output_dir / "predictions.jsonl"
     total_exact = 0
