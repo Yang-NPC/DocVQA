@@ -7,4 +7,5 @@ venv/
 outputs/
 wandb/
 .cache/
+# Local Colab / experiment notebooks
 *.ipynb

@@ -1,0 +1,56 @@
+### model
+model_name_or_path: Qwen/Qwen3-VL-8B-Thinking
+trust_remote_code: true
+image_max_pixels: 1003520
+
+### method
+stage: rlhf
+rlhf_algo: grpo
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_target: all
+
+### dataset
+dataset_dir: data
+dataset: docvqa_grpo_train
+template: qwen3_vl
+cutoff_len: 2048
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### rule-based reward
+reward_model: rule_based
+# Wire your LLaMA-Factory GRPO branch to:
+# rewards.docvqa_grpo_reward:reward_func
+
+### GRPO
+num_generations: 8
+max_new_tokens: 1024
+kl_coef: 0.05
+
+### vLLM generation
+vllm_gpu_util: 0.4
+vllm_maxlen: 2048
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 2
+learning_rate: 5.0e-6
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+optim: adamw_torch
+bf16: true
+ddp_timeout: 180000000
+
+### output
+output_dir: saves/qwen3-vl-8b-thinking/lora/grpo-docvqa
+save_steps: 50
+logging_steps: 5
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: none
+

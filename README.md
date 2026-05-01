@@ -256,3 +256,45 @@ The evaluator writes:
 - Use `--torch-dtype bfloat16` on modern GPUs. Use `--torch-dtype float16` if BF16 is unavailable.
 - Add `--attn-implementation flash_attention_2` if the server has FlashAttention installed.
 - Use `--limit` for quick server sanity checks before running the full validation split.
+
+## GRPO LoRA Training Scaffold
+
+The GRPO reward logic is in `rewards/docvqa_grpo_reward.py`.
+
+Reward design:
+
+- Absolute accuracy: extract exactly one `<answer>...</answer>` block and exact-match against DocVQA answers after lowercase/whitespace normalization. Correct answers get `+1.5`.
+- Visual grounding: inspect complete `<think>...</think>` blocks. If a sufficiently long ground-truth answer appears in the thinking text, add `+0.5`.
+- Short answers below the grounding threshold skip the grounding reward to reduce false positives.
+
+Validate reward behavior:
+
+```bash
+python -m unittest tests/test_docvqa_reward.py -v
+```
+
+Prepare a local LLaMA-Factory multimodal ShareGPT dataset:
+
+```bash
+python scripts/prepare_docvqa_llamafactory.py \
+  --split validation \
+  --limit 200 \
+  --output-dir data/docvqa_grpo \
+  --output-name train.json
+```
+
+Training config:
+
+```bash
+configs/llamafactory/qwen3vl_8b_thinking_lora_grpo_docvqa.yaml
+```
+
+Important: current upstream LLaMA-Factory examples show Qwen3-VL templates as `qwen3_vl` / `qwen3_vl_nothink`. For this thinking-style GRPO setup, the config uses `template: qwen3_vl` and `model_name_or_path: Qwen/Qwen3-VL-8B-Thinking`.
+
+Local Colab notebook:
+
+```bash
+colab_docvqa_grpo_training.ipynb
+```
+
+Notebook files are ignored by git.
