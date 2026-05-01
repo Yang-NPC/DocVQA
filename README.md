@@ -50,11 +50,11 @@ The hard subset is selected with a lightweight heuristic over the ground-truth m
 
 ## Thinking-Mode Hard Baseline
 
-Qwen thinking mode can be tested separately. It is slower, so use a small hard subset first:
+Qwen thinking mode should be tested with the thinking checkpoint, `Qwen/Qwen3-VL-8B-Thinking`. It is slower, so use a small hard subset first:
 
 ```bash
 python scripts/eval_docvqa_qwen3vl.py \
-  --model-id Qwen/Qwen3-VL-8B-Instruct \
+  --model-id Qwen/Qwen3-VL-8B-Thinking \
   --dataset-name lmms-lab/DocVQA \
   --dataset-config DocVQA \
   --split validation \
@@ -73,7 +73,7 @@ The script stores the raw `prediction` and a `scored_prediction` with `<think>..
 
 For thinking-mode runs, `metrics.json` also reports `thinking_tag_count`, `thinking_tag_rate`, and `missing_think_tag_count`, so you can see how often the model failed to include a complete `<think>...</think>` block.
 
-For the vLLM OpenAI-compatible evaluator, `--thinking-mode on` sends `chat_template_kwargs.enable_thinking=true` in `extra_body`. This is required for Qwen thinking mode; appending `/think` alone may not produce `<think>...</think>` traces.
+For the vLLM OpenAI-compatible evaluator, `--thinking-mode on` sends `chat_template_kwargs.enable_thinking=true` in `extra_body`. This is required for Qwen thinking mode; appending `/think` alone may not produce `<think>...</think>` traces. The served vLLM model must also be `Qwen/Qwen3-VL-8B-Thinking`; serving `Qwen/Qwen3-VL-8B-Instruct` will usually produce zero think tags.
 
 ## Acceleration Strategy
 
@@ -129,10 +129,10 @@ Then start conservatively:
 
 If stable, increase `--concurrency`, `--max-num-seqs`, and `--max-num-batched-tokens` one at a time. Qwen3-VL can hit a vLLM V1 DeepStack scheduler crash under high multimodal concurrency, so keep `VLLM_USE_V1=0` if you see `Requested more deepstack tokens than available in buffer`.
 
-6. Keep thinking mode separate:
+6. Keep thinking mode separate and use the Thinking checkpoint:
 
 ```bash
---thinking-mode on --max-new-tokens 256
+--model-id Qwen/Qwen3-VL-8B-Thinking --thinking-mode on --max-new-tokens 256
 ```
 
 Thinking mode is slower because it generates more tokens. Use smaller batches or lower vLLM concurrency, for example `--batch-size 4` in Transformers or `--concurrency 2` in vLLM. Check `missing_think_tag_count` to see how often a thinking run omitted a complete `<think>...</think>` trace.
@@ -195,6 +195,41 @@ python scripts/eval_docvqa_qwen3vl_vllm_server.py \
 ```
 
 If vLLM V1 hits a Qwen3-VL DeepStack scheduler error under multimodal concurrency, restart the server with `VLLM_USE_V1=0`. Then raise `--concurrency`, `--max-num-seqs`, and `--max-num-batched-tokens` gradually.
+
+### vLLM Thinking Server
+
+Stop the Instruct vLLM server before serving the Thinking checkpoint on the same port:
+
+```bash
+MODEL_ID=Qwen/Qwen3-VL-8B-Thinking \
+PORT=8000 \
+PID_FILE=/tmp/vllm_qwen3vl_thinking.pid \
+LOG_FILE=/tmp/vllm_qwen3vl_thinking.log \
+scripts/run_vllm_qwen3vl_thinking.sh
+```
+
+Then evaluate with the same Thinking model id:
+
+```bash
+python scripts/eval_docvqa_qwen3vl_vllm_server.py \
+  --model-id Qwen/Qwen3-VL-8B-Thinking \
+  --base-url http://localhost:8000/v1 \
+  --dataset-name lmms-lab/DocVQA \
+  --dataset-config DocVQA \
+  --split validation \
+  --selection hard \
+  --limit 200 \
+  --thinking-mode on \
+  --max-tokens 256 \
+  --temperature 0.6 \
+  --top-p 0.95 \
+  --top-k 20 \
+  --concurrency 2 \
+  --max-pixels 1003520 \
+  --output-dir outputs/baseline_qwen3vl8b_docvqa_hard200_vllm_think
+```
+
+If `thinking_tag_count` remains zero, verify `/v1/models` reports `Qwen/Qwen3-VL-8B-Thinking` rather than `Qwen/Qwen3-VL-8B-Instruct`.
 
 ## Full Baseline
 
