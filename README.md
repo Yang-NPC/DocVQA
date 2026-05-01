@@ -280,7 +280,9 @@ python scripts/prepare_docvqa_llamafactory.py \
   --split validation \
   --limit 200 \
   --output-dir data/docvqa_grpo \
-  --output-name train.json
+  --output-name train.json \
+  --num-workers 8 \
+  --skip-existing-images
 ```
 
 Training config:
