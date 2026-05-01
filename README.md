@@ -71,6 +71,68 @@ python scripts/eval_docvqa_qwen3vl.py \
 
 The script stores the raw `prediction` and a `scored_prediction` with `<think>...</think>` blocks removed before exact match and ANLS scoring.
 
+## Acceleration Strategy
+
+Use this order when scaling from quick checks to full validation:
+
+1. Start with a hard smoke test:
+
+```bash
+--selection hard --limit 20
+```
+
+This catches obvious prompt/model/dataset issues without spending a full validation pass.
+
+2. Batch the Transformers evaluator:
+
+```bash
+--batch-size 16 --torch-dtype bfloat16
+```
+
+On an 80G A100, try `--batch-size 16`, then `24`, then `32`. If memory is fine but throughput is still low, the bottleneck is likely image preprocessing or generation scheduling rather than model weights.
+
+3. Cap image pixels for faster sweeps:
+
+```bash
+--max-pixels 1003520
+```
+
+This reduces multimodal preprocessing and vision tokens. It can change accuracy, so report whether a run used a pixel cap.
+
+4. Use FlashAttention if installed:
+
+```bash
+--attn-implementation flash_attention_2
+```
+
+If FlashAttention is not installed correctly, omit the flag rather than blocking baseline runs.
+
+5. Use vLLM for fastest visual inference:
+
+```bash
+VLLM_USE_V1=0 vllm serve Qwen/Qwen3-VL-8B-Instruct \
+  --dtype bfloat16 \
+  --max-model-len 8192 \
+  --max-num-seqs 8 \
+  --max-num-batched-tokens 8192
+```
+
+Then start conservatively:
+
+```bash
+--concurrency 8
+```
+
+If stable, increase `--concurrency`, `--max-num-seqs`, and `--max-num-batched-tokens` one at a time. Qwen3-VL can hit a vLLM V1 DeepStack scheduler crash under high multimodal concurrency, so keep `VLLM_USE_V1=0` if you see `Requested more deepstack tokens than available in buffer`.
+
+6. Keep thinking mode separate:
+
+```bash
+--thinking-mode on --max-new-tokens 256
+```
+
+Thinking mode is slower because it generates more tokens. Use smaller batches or lower vLLM concurrency, for example `--batch-size 4` in Transformers or `--concurrency 2` in vLLM.
+
 ## Faster A100 Baseline
 
 On an 80G A100, start with batching in the Transformers evaluator:
