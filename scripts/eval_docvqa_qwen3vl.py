@@ -29,8 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--answers-column", default="answers")
     parser.add_argument("--question-id-column", default="questionId")
     parser.add_argument("--max-new-tokens", type=int, default=32)
+    parser.add_argument("--thinking-mode", choices=["default", "on", "off"], default="default")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument("--min-p", type=float, default=None)
     parser.add_argument("--torch-dtype", choices=["auto", "bfloat16", "float16", "float32"], default="auto")
     parser.add_argument("--device-map", default="auto")
     parser.add_argument("--attn-implementation", default=None)
@@ -158,11 +161,25 @@ def select_dataset(dataset: Any, args: argparse.Namespace) -> Any:
     return dataset.select([index for _, index in scored_indices[:limit]])
 
 
-def build_messages(image: Any, question: str) -> list[dict[str, Any]]:
+def thinking_instruction(thinking_mode: str) -> str:
+    if thinking_mode == "on":
+        return "\n/think"
+    if thinking_mode == "off":
+        return "\n/no_think"
+    return ""
+
+
+def strip_thinking(text: str) -> str:
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
+
+
+def build_messages(image: Any, question: str, thinking_mode: str) -> list[dict[str, Any]]:
     prompt = (
         "Answer the question using only the document image. "
         "Return the shortest exact answer text, without explanation.\n"
         f"Question: {question}"
+        f"{thinking_instruction(thinking_mode)}"
     )
     return [
         {
@@ -181,13 +198,23 @@ def generate_answer(
     image: Any,
     question: str,
     max_new_tokens: int,
+    thinking_mode: str,
     temperature: float,
     top_p: float,
+    top_k: int | None,
+    min_p: float | None,
 ) -> str:
     import torch
 
-    messages = build_messages(image, question)
-    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    messages = build_messages(image, question, thinking_mode)
+    chat_template_kwargs = {"tokenize": False, "add_generation_prompt": True}
+    if thinking_mode != "default":
+        chat_template_kwargs["enable_thinking"] = thinking_mode == "on"
+    try:
+        text = processor.apply_chat_template(messages, **chat_template_kwargs)
+    except TypeError:
+        chat_template_kwargs.pop("enable_thinking", None)
+        text = processor.apply_chat_template(messages, **chat_template_kwargs)
     image_inputs, video_inputs = process_vision_info(messages)
     inputs = processor(
         text=[text],
@@ -203,6 +230,10 @@ def generate_answer(
         generation_kwargs.update({"do_sample": True, "temperature": temperature, "top_p": top_p})
     else:
         generation_kwargs["do_sample"] = False
+    if top_k is not None:
+        generation_kwargs["top_k"] = top_k
+    if min_p is not None:
+        generation_kwargs["min_p"] = min_p
 
     with torch.inference_mode():
         generated_ids = model.generate(**inputs, **generation_kwargs)
@@ -267,12 +298,16 @@ def main() -> None:
                 image=image,
                 question=question,
                 max_new_tokens=args.max_new_tokens,
+                thinking_mode=args.thinking_mode,
                 temperature=args.temperature,
                 top_p=args.top_p,
+                top_k=args.top_k,
+                min_p=args.min_p,
             )
+            scored_prediction = strip_thinking(prediction)
 
-            em = exact_match(prediction, answers)
-            anls = anls_score(prediction, answers)
+            em = exact_match(scored_prediction, answers)
+            anls = anls_score(scored_prediction, answers)
             total_exact += int(em)
             total_anls += anls
             count += 1
@@ -281,6 +316,7 @@ def main() -> None:
                 "question_id": row.get(args.question_id_column),
                 "question": question,
                 "prediction": prediction,
+                "scored_prediction": scored_prediction,
                 "answers": answers,
                 "hardness_score": hardness_score(row, args.question_column, args.answers_column),
                 "exact_match": em,
@@ -295,6 +331,7 @@ def main() -> None:
         "split": args.split,
         "selection": args.selection,
         "seed": args.seed,
+        "thinking_mode": args.thinking_mode,
         "num_examples": count,
         "exact_match": total_exact / count if count else 0.0,
         "anls": total_anls / count if count else 0.0,

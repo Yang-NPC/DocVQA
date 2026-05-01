@@ -47,6 +47,28 @@ python scripts/eval_docvqa_qwen3vl.py \
 
 The hard subset is selected with a lightweight heuristic over the ground-truth metadata: longer questions, longer/multi-token answers, numeric/date-like answers, and examples where provided answers differ.
 
+## Thinking-Mode Hard Baseline
+
+Qwen thinking mode can be tested separately. It is slower, so use a small hard subset first:
+
+```bash
+python scripts/eval_docvqa_qwen3vl.py \
+  --model-id Qwen/Qwen3-VL-8B-Instruct \
+  --dataset-name lmms-lab/DocVQA \
+  --dataset-config DocVQA \
+  --split validation \
+  --selection hard \
+  --limit 20 \
+  --thinking-mode on \
+  --max-new-tokens 256 \
+  --temperature 0.6 \
+  --top-p 0.95 \
+  --top-k 20 \
+  --output-dir outputs/baseline_qwen3vl8b_docvqa_hard20_think
+```
+
+The script stores the raw `prediction` and a `scored_prediction` with `<think>...</think>` blocks removed before exact match and ANLS scoring.
+
 ## Full Baseline
 
 ```bash
