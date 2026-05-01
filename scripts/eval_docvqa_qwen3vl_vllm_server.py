@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--min-p", type=float, default=None)
-    parser.add_argument("--concurrency", type=int, default=32)
+    parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument("--timeout", type=float, default=3600.0)
     parser.add_argument("--max-pixels", type=int, default=None)
     parser.add_argument("--jpeg-quality", type=int, default=85)

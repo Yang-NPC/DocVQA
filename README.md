@@ -109,7 +109,9 @@ Start the server:
 pip install -U vllm
 vllm serve Qwen/Qwen3-VL-8B-Instruct \
   --dtype bfloat16 \
-  --max-model-len 8192
+  --max-model-len 8192 \
+  --max-num-seqs 8 \
+  --max-num-batched-tokens 8192
 ```
 
 Then evaluate with high request concurrency:
@@ -121,12 +123,12 @@ python scripts/eval_docvqa_qwen3vl_vllm_server.py \
   --dataset-name lmms-lab/DocVQA \
   --dataset-config DocVQA \
   --split validation \
-  --concurrency 64 \
+  --concurrency 8 \
   --max-pixels 1003520 \
   --output-dir outputs/baseline_qwen3vl8b_docvqa_val_vllm
 ```
 
-Try `--concurrency 32`, `64`, and `128`; the best value depends on image size and server settings.
+If vLLM V1 hits a Qwen3-VL DeepStack scheduler error under multimodal concurrency, restart the server with `VLLM_USE_V1=0`. Then raise `--concurrency`, `--max-num-seqs`, and `--max-num-batched-tokens` gradually.
 
 ## Full Baseline
 
