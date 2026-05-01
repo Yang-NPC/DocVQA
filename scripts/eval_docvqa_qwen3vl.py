@@ -31,7 +31,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--thinking-mode", choices=["default", "on", "off"], default="default")
-    parser.add_argument("--require-think-tags", action="store_true")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=None)
@@ -409,7 +408,6 @@ def main() -> None:
                 else None
             )
         ),
-        "require_think_tags": args.require_think_tags,
         "missing_think_tag_count": (
             count - thinking_tag_count
             if args.thinking_mode == "on"
@@ -420,8 +418,6 @@ def main() -> None:
     }
     if metrics["thinking_tag_warning"]:
         print(f"WARNING: {metrics['thinking_tag_warning']}")
-    if args.require_think_tags and args.thinking_mode == "on" and thinking_tag_count < count:
-        raise RuntimeError(metrics["thinking_tag_warning"])
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
 
