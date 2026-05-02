@@ -7,9 +7,9 @@ data:
   image_dir: data/docvqa_easyr1
   max_prompt_length: 2048
   max_response_length: 1024
-  rollout_batch_size: 8
+  rollout_batch_size: 16
   mini_rollout_batch_size: null
-  val_batch_size: 8
+  val_batch_size: 16
   format_prompt: null
   shuffle: true
   seed: 42
@@ -32,8 +32,8 @@ algorithm:
 worker:
   actor:
     global_batch_size: 8
-    micro_batch_size_per_device_for_update: 1
-    micro_batch_size_per_device_for_experience: 1
+    micro_batch_size_per_device_for_update: 4
+    micro_batch_size_per_device_for_experience: 4
     max_grad_norm: 1.0
     padding_free: true
     dynamic_batching: true
@@ -59,15 +59,15 @@ worker:
       enable_cpu_offload: false
       enable_rank0_init: true
     offload:
-      offload_params: true
-      offload_optimizer: true
+      offload_params: false
+      offload_optimizer: false
 
   rollout:
     n: 8
     temperature: 1.0
     top_p: 1.0
     limit_images: 0
-    gpu_memory_utilization: 0.4
+    gpu_memory_utilization: 0.7
     enforce_eager: false
     enable_chunked_prefill: false
     tensor_parallel_size: 1
