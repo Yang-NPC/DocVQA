@@ -46,7 +46,7 @@ worker:
       lora:
         rank: 32
         alpha: 64
-        target_modules: all-linear
+        target_modules: q_proj,v_proj
         exclude_modules: .*visual.*
     optim:
       lr: 5.0e-6
@@ -67,7 +67,7 @@ worker:
       offload_optimizer: false
 
   rollout:
-    n: 8
+    n: 4
     temperature: 1.0
     top_p: 1.0
     limit_images: 0
@@ -84,7 +84,7 @@ worker:
   ref:
     fsdp:
       enable_full_shard: true
-      enable_cpu_offload: true
+      enable_cpu_offload: false
       enable_rank0_init: true
       torch_dtype: bf16
       mp_param_dtype: bf16
