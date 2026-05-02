@@ -1,6 +1,7 @@
 import unittest
 
 from rewards.docvqa_grpo_reward import compute_reward, reward_func
+from rewards.easyr1_docvqa_reward import compute_score as easyr1_compute_score
 
 
 class DocVQARewardTest(unittest.TestCase):
@@ -41,7 +42,19 @@ class DocVQARewardTest(unittest.TestCase):
         )
         self.assertEqual(rewards, [2.0, 0.5])
 
+    def test_easyr1_reward_adapter(self):
+        scores = easyr1_compute_score(
+            [
+                {
+                    "response": "<think>The answer San Diego is visible.</think><answer>San Diego</answer>",
+                    "ground_truth": ["San Diego"],
+                }
+            ]
+        )
+        self.assertEqual(scores[0]["overall"], 2.0)
+        self.assertEqual(scores[0]["accuracy"], 1.5)
+        self.assertEqual(scores[0]["grounding"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()
-

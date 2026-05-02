@@ -273,34 +273,42 @@ Validate reward behavior:
 python -m unittest tests/test_docvqa_reward.py -v
 ```
 
-Prepare a local LLaMA-Factory multimodal ShareGPT dataset:
+EasyR1 uses the adapter in `rewards/easyr1_docvqa_reward.py`.
+
+Prepare a local EasyR1 image-text JSONL dataset:
 
 ```bash
-python scripts/prepare_docvqa_llamafactory.py \
+python scripts/prepare_docvqa_easyr1.py \
   --split validation \
   --limit 200 \
-  --output-dir data/docvqa_grpo \
-  --output-name train.json \
+  --output-dir data/docvqa_easyr1 \
+  --output-name train.jsonl \
   --num-workers 8 \
   --skip-existing-images
 ```
 
-Training config:
+For a quick validation split, prepare a separate file:
 
 ```bash
-configs/llamafactory/qwen3vl_8b_thinking_lora_grpo_docvqa.yaml
+python scripts/prepare_docvqa_easyr1.py \
+  --split validation \
+  --limit 50 \
+  --output-dir data/docvqa_easyr1 \
+  --output-name val.jsonl \
+  --num-workers 8 \
+  --skip-existing-images
 ```
 
-Important: current upstream LLaMA-Factory examples show Qwen3-VL templates as `qwen3_vl` / `qwen3_vl_nothink`. For this thinking-style GRPO setup, the config uses `template: qwen3_vl` and `model_name_or_path: Qwen/Qwen3-VL-8B-Thinking`.
-
-The GRPO YAML requires a LLaMA-Factory branch or fork that actually exposes GRPO parser/trainer support. If the installed checkout is upstream-only and rejects keys like `rlhf_algo`, `num_generations`, or `kl_coef`, that is a LLaMA-Factory capability mismatch, not a reward-script error. Do not remove those keys unless you intentionally stop doing GRPO.
-
-Check the installed LLaMA-Factory checkout before launching training:
+EasyR1 training config:
 
 ```bash
-python scripts/check_llamafactory_grpo_support.py \
-  --llamafactory-dir /content/LLaMA-Factory \
-  --config /content/LLaMA-Factory/examples/train_lora/qwen3vl_8b_thinking_lora_grpo_docvqa.yaml
+configs/easyr1/qwen3vl_8b_docvqa_grpo_lora.yaml
+```
+
+Launch from an EasyR1 checkout with this repository on `PYTHONPATH` or copied into the EasyR1 workspace:
+
+```bash
+bash scripts/run_easyr1_docvqa_grpo.sh
 ```
 
 Local Colab notebook:
