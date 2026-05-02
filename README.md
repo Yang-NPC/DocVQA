@@ -313,18 +313,29 @@ bash scripts/run_easyr1_docvqa_grpo.sh
 
 EasyR1 installation can take several minutes because its requirements include heavy runtime packages such as `flash-attn`, `ray`, and `vllm`. In Colab, avoid quiet/captured pip output for the EasyR1 install so dependency resolution or CUDA extension builds are visible.
 
-For Colab runtimes with Python 3.12, Torch `2.10.0+cu128`, and CUDA 12.8, install a prebuilt `flash-attn` wheel before installing EasyR1 to avoid compiling from source:
-
-```bash
-python -m pip install --no-deps \
-  "https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
-```
-
 Pin vLLM to EasyR1's expected API version before launching training:
 
 ```bash
 python -m pip install "vllm==0.11.0"
 python -c "import vllm, vllm.lora.models; print(vllm.__version__)"
+```
+
+Install `flash-attn` after vLLM, because vLLM may change the final Torch version. If you see an undefined-symbol error from `flash_attn_2_cuda`, uninstall `flash-attn` and reinstall the wheel matching the current `torch.__version__`.
+
+For Torch 2.8 on Python 3.12:
+
+```bash
+python -m pip uninstall -y flash-attn
+python -m pip install --no-deps \
+  "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.8cxx11abiFALSE-cp312-cp312-linux_x86_64.whl"
+```
+
+For Torch 2.10 on Python 3.12:
+
+```bash
+python -m pip uninstall -y flash-attn
+python -m pip install --no-deps \
+  "https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
 ```
 
 Local Colab notebook:
