@@ -317,7 +317,8 @@ Pin vLLM to EasyR1's expected API version before launching training:
 
 ```bash
 python -m pip install "vllm==0.11.0"
-python -c "import vllm, vllm.lora.models; print(vllm.__version__)"
+python -m pip install -U "torchao>=0.16.0"
+python -c "import torchao, vllm, vllm.lora.models; print(torchao.__version__, vllm.__version__)"
 ```
 
 Install `flash-attn` after vLLM, because vLLM may change the final Torch version. If you see an undefined-symbol error from `flash_attn_2_cuda`, uninstall `flash-attn` and reinstall the wheel matching the current `torch.__version__`.
