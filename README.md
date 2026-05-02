@@ -311,6 +311,8 @@ Launch from an EasyR1 checkout with this repository on `PYTHONPATH` or copied in
 bash scripts/run_easyr1_docvqa_grpo.sh
 ```
 
+EasyR1 installation can take several minutes because its requirements include heavy runtime packages such as `flash-attn`, `ray`, and `vllm`. In Colab, avoid quiet/captured pip output for the EasyR1 install so dependency resolution or CUDA extension builds are visible.
+
 Local Colab notebook:
 
 ```bash
