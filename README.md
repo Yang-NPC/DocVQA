@@ -313,6 +313,13 @@ bash scripts/run_easyr1_docvqa_grpo.sh
 
 EasyR1 installation can take several minutes because its requirements include heavy runtime packages such as `flash-attn`, `ray`, and `vllm`. In Colab, avoid quiet/captured pip output for the EasyR1 install so dependency resolution or CUDA extension builds are visible.
 
+For Colab runtimes with Python 3.12, Torch `2.10.0+cu128`, and CUDA 12.8, install a prebuilt `flash-attn` wheel before installing EasyR1 to avoid compiling from source:
+
+```bash
+python -m pip install --no-deps \
+  "https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
+```
+
 Local Colab notebook:
 
 ```bash
