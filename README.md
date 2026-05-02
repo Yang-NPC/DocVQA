@@ -320,6 +320,13 @@ python -m pip install --no-deps \
   "https://github.com/lesj0610/flash-attention/releases/download/v2.8.3-cu12-torch2.10-cp312/flash_attn-2.8.3%2Bcu12torch2.10cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
 ```
 
+Pin vLLM to EasyR1's expected API version before launching training:
+
+```bash
+python -m pip install "vllm==0.11.0"
+python -c "import vllm, vllm.lora.models; print(vllm.__version__)"
+```
+
 Local Colab notebook:
 
 ```bash
