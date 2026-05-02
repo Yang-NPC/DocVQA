@@ -17,6 +17,11 @@ if TYPE_CHECKING:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate Qwen3-VL on DocVQA.")
     parser.add_argument("--model-id", default="Qwen/Qwen3-VL-8B-Instruct")
+    parser.add_argument(
+        "--adapter-path",
+        default=None,
+        help="Optional PEFT/LoRA adapter directory to load on top of --model-id.",
+    )
     parser.add_argument("--dataset-name", default="lmms-lab/DocVQA")
     parser.add_argument("--dataset-config", default="DocVQA")
     parser.add_argument("--split", default="validation")
@@ -172,13 +177,37 @@ def thinking_instruction(thinking_mode: str) -> str:
     return ""
 
 
+def build_docvqa_prompt(question: str) -> str:
+    return (
+        "Answer the document question.\n\n"
+        "You must output exactly:\n"
+        "<think>brief visual evidence or OCR evidence you used</think>\n"
+        "<answer>the shortest exact answer text</answer>\n\n"
+        f"Question: {question}"
+    )
+
+
+def extract_answer(text: str) -> str | None:
+    match = re.search(r"<answer>\s*(.*?)\s*</answer>", text, flags=re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def strip_thinking(text: str) -> str:
+    answer = extract_answer(text)
+    if answer is not None:
+        return answer
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    if re.search(r"</think>", text, flags=re.IGNORECASE):
+        text = re.split(r"</think>", text, flags=re.IGNORECASE)[-1]
+    text = re.sub(r"^.*?<think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"</?answer>", "", text, flags=re.IGNORECASE)
     return text.strip()
 
 
 def has_thinking_tag(text: str) -> bool:
-    return re.search(r"<think>.*?</think>", text, flags=re.DOTALL | re.IGNORECASE) is not None
+    return re.search(r"<think>.*?</think>|</think>", text, flags=re.DOTALL | re.IGNORECASE) is not None
 
 
 def build_messages(
@@ -189,11 +218,7 @@ def build_messages(
     max_pixels: int | None,
 ) -> list[dict[str, Any]]:
     if thinking_mode == "on":
-        prompt = (
-            "Use thinking mode to reason from the document image, then provide the shortest exact answer text.\n"
-            f"Question: {question}"
-            f"{thinking_instruction(thinking_mode)}"
-        )
+        prompt = build_docvqa_prompt(question)
     else:
         prompt = (
             "Answer the question using only the document image. "
@@ -352,7 +377,13 @@ def main() -> None:
     dataset = select_dataset(dataset, args)
 
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=args.trust_remote_code)
+    if getattr(processor, "tokenizer", None) is not None:
+        processor.tokenizer.padding_side = "left"
     model = Qwen3VLForConditionalGeneration.from_pretrained(args.model_id, **model_kwargs)
+    if args.adapter_path:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, args.adapter_path)
     model.eval()
 
     predictions_path = output_dir / "predictions.jsonl"
@@ -394,6 +425,7 @@ def main() -> None:
 
     metrics = {
         "model_id": args.model_id,
+        "adapter_path": args.adapter_path,
         "dataset_name": args.dataset_name,
         "dataset_config": args.dataset_config,
         "split": args.split,

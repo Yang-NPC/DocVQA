@@ -14,6 +14,7 @@ from typing import Any
 
 from eval_docvqa_qwen3vl import (
     anls_score,
+    build_docvqa_prompt,
     coerce_answers,
     exact_match,
     hardness_score,
@@ -77,11 +78,7 @@ def image_to_data_url(image: Any, max_pixels: int | None, jpeg_quality: int) -> 
 
 def build_prompt(question: str, thinking_mode: str) -> str:
     if thinking_mode == "on":
-        return (
-            "Use thinking mode to reason from the document image, then provide the shortest exact answer text.\n"
-            f"Question: {question}"
-            f"{thinking_instruction(thinking_mode)}"
-        )
+        return build_docvqa_prompt(question)
     return (
         "Answer the question using only the document image. "
         "Return the shortest exact answer text, without explanation.\n"
